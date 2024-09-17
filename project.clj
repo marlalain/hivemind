@@ -4,15 +4,15 @@
   :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0"
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :dependencies [[org.clojure/clojure "1.11.1"]
-                 [org.clojure/data.json "2.5.0"]
+                 [org.clojure/algo.generic "0.1.3"]
+                 [org.clojure/tools.logging "0.4.1"]
                  [http-kit/http-kit "2.8.0"]
                  [lambdaisland/kaocha "1.91.1392"]
                  [lambdaisland/kaocha-cucumber "0.11.100"]
-                 [ring "1.10.0"]
-                 [ring/ring-json "0.5.1"]
-                 [compojure "1.7.0"]
-                 [org.apache.kafka/kafka-clients "3.5.1"]
-                 [cheshire "5.11.0"]]
+                 [org.apache.kafka/kafka-streams "2.1.0"]
+                  [org.apache.kafka/kafka-streams-test-utils "2.1.0"]
+                 [fundingcircle/jackdaw "0.6.4"]]
   :main ^:skip-aot hivemind.core
   :target-path "target/%s"
+  :repositories [["confluent" "https://packages.confluent.io/maven/"]]
   :aliases {"producer" ["run" "-m" "hivemind.core"]})

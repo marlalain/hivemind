@@ -1,63 +1,49 @@
 (ns hivemind.core
   (:gen-class)
   (:require
-   [clojure.data.json :as json]
-   [clojure.java.io :as io])
+   [clojure.algo.generic.functor :refer [fmap]]
+   [clojure.tools.logging :refer [info]]
+   [jackdaw.serdes]
+   [jackdaw.serdes.resolver :as resolver]
+   [jackdaw.serdes.edn :as jse]
+   [jackdaw.streams :as js])
+
   (:import
-   [java.util Properties]
-   [org.apache.kafka.clients.admin AdminClient NewTopic]
-   [org.apache.kafka.clients.producer
-    Callback
-    KafkaProducer
-    ProducerConfig
-    ProducerRecord]
-   [org.apache.kafka.common.errors TopicExistsException]))
+   [org.apache.kafka.clients.producer ProducerConfig]))
 
-(defn- build-properties [config-fname]
-  (with-open [config (io/reader config-fname)]
-    (doto (Properties.)
-      (.putAll
-       {ProducerConfig/BOOTSTRAP_SERVERS_CONFIG "localhost:9092"
-        ProducerConfig/KEY_SERIALIZER_CLASS_CONFIG "org.apache.kafka.common.serialization.StringSerializer"
-        ProducerConfig/VALUE_SERIALIZER_CLASS_CONFIG "org.apache.kafka.common.serialization.StringSerializer"})
-      (.load config))))
+(defn topic-config ([topic-name]
+                    (topic-config topic-name (jse/serde) (jse/serde)))
+  ([topic-name key-serde value-serde]
+   {:topic-name topic-name
+    :partition-count 1
+    :replication-factor 1
+    :key-serde key-serde
+    :value-serde value-serde
+    :topic-config {}}))
 
-(defn- create-topic! [topic partitions replication config]
-  (let [ac (AdminClient/create config)]
-    (try
-      (.createTopics ac [(NewTopic. ^String topic (int partitions) (short replication))])
-      (catch TopicExistsException _ nil)
-      (finally (.close ac)))))
+(defn- build-properties []
+  {"application.id" "hivemind"
+   ProducerConfig/BOOTSTRAP_SERVERS_CONFIG "localhost:9092"})
 
-(defn producer! [config-fname topic]
-  (let [props (build-properties config-fname)
-        print-ex (comp println (partial str "Failed to deliver message: "))
-        print-metadata #(printf "Produced record to topic %s partition [%d] @ offset %d\n"
-                                (.topic %)
-                                (.partition %)
-                                (.offset %))
-        create-msg #(let [k "alice"
-                          v (json/write-str {:count %})]
-                      (printf "Producing record: %s\t%s\n" k v)
-                      (ProducerRecord. topic k v))]
-    (with-open [producer (KafkaProducer. props)]
-      (create-topic! topic 1 1 props)
-      (let [callback (reify Callback
-                       (onCompletion [_ metadata exception]
-                         (if exception (print-ex exception) (print-metadata metadata))))]
-        (doseq [i (range 5)]
-          (.send producer (create-msg i) callback))
-        (.flush producer)
-        (let [futures (doall (map #(.send producer (create-msg %)) (range 5 10)))]
-          (.flush producer)
+(defn build-topology
+  "returns a configured topology builder"
+  [builder]
+  (-> (js/kstream builder (topic-config "tasks"))
+      (js/peek (fn [[k v]]
+                 (info (str {:key k :value v}))))
+      (js/to (topic-config "tasks-stream")))
+  builder)
 
-          (while (not-every? future-done? futures)
-            (Thread/sleep 50))
-          (doseq [fut futures]
-            (try (let [metadata (deref fut)]
-                   (print-metadata metadata))
-                 (catch Exception e (print-ex e))))))))
-  (printf "10 messages were produced to topic %s" topic))
+(defn start-app [app-config]
+  (let [builder (js/streams-builder)
+        topology (build-topology builder)
+        app (js/kafka-streams topology app-config)]
+    (js/start app)
+    (info "hivemind booted")
+    app))
 
-(defn -main [& args]
-  (apply producer! args))
+(defn stop-app [app]
+  (js/close app)
+  (info "hivemind is shutting down..."))
+
+(defn -main [& _] (start-app (build-properties)))
