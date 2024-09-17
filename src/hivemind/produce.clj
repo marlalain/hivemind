@@ -1,17 +1,16 @@
 (ns hivemind.produce
   (:gen-class)
   (:require
+   [hivemind.topics :refer [create-topic!]]
    [clojure.data.json :as json]
    [clojure.java.io :as io])
   (:import
    [java.util Properties]
-   [org.apache.kafka.clients.admin AdminClient NewTopic]
    [org.apache.kafka.clients.producer
     Callback
     KafkaProducer
     ProducerConfig
-    ProducerRecord]
-   [org.apache.kafka.common.errors TopicExistsException]))
+    ProducerRecord]))
 
 (defn- build-properties [config-fname]
   (with-open [config (io/reader config-fname)]
@@ -22,26 +21,19 @@
         ProducerConfig/VALUE_SERIALIZER_CLASS_CONFIG "org.apache.kafka.common.serialization.StringSerializer"})
       (.load config))))
 
-(defn- create-topic! [topic partitions replication config]
-  (let [ac (AdminClient/create config)]
-    (try
-      (.createTopics ac [(NewTopic. ^String topic (int partitions) (short replication))])
-      (catch TopicExistsException _ nil)
-      (finally (.close ac)))))
-
 (defn producer! [config-fname topic]
   (let [props (build-properties config-fname)
-        print-ex (comp println (partial str "Failed to deliver message: "))
-        print-metadata #(printf "Produced record to topic %s partition [%d] @ offset %d\n"
+        print-ex (comp println (partial str "failed to deliver message: "))
+        print-metadata #(printf "produced record to topic %s partition [%d] @ offset %d\n"
                                 (.topic %)
                                 (.partition %)
                                 (.offset %))
         create-msg #(let [k "alice"
                           v (json/write-str {:count %})]
-                      (printf "Producing record: %s\t%s\n" k v)
+                      (printf "producing record: %s\t%s\n" k v)
                       (ProducerRecord. topic k v))]
     (with-open [producer (KafkaProducer. props)]
-      (create-topic! topic 1 1 props)
+      (create-topic! topic props)
       (let [callback (reify Callback
                        (onCompletion [_ metadata exception]
                          (if exception (print-ex exception) (print-metadata metadata))))]
