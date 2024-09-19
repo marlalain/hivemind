@@ -16,6 +16,7 @@
     babashka
     pipx
     apacheKafka
+    kafkactl
   ];
 
   # https://devenv.sh/languages/
@@ -42,7 +43,7 @@
   enterShell = ''
     export JAVA_HOME=${pkgs.openjdk11}
     export PATH="${pkgs.apacheKafka}:$PATH"
-    pipx install kaskade
+    alias k=kafkactl
   '';
 
   # https://devenv.sh/tests/
